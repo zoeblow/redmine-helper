@@ -1561,11 +1561,6 @@ needle@^3.1.0:
     iconv-lite "^0.6.3"
     sax "^1.2.4"
 
-nuijs@^0.6.2:
-  version "0.6.2"
-  resolved "https://registry.npmmirror.com/nuijs/-/nuijs-0.6.2.tgz#bc94cff0d4a32834c3ae2911f322e0e03fb9e028"
-  integrity sha512-vxjZlx/TzluUqbsnLzBiFOPuOYwWAhGzTOQFzXhMZEErZDVApeOt8GERyfzAdvr8110e4he6F87GbTst0BRxsg==
-
 object-inspect@^1.13.3:
   version "1.13.4"
   resolved "https://registry.npmmirror.com/object-inspect/-/object-inspect-1.13.4.tgz#8375265e21bc20d0fa582c22e1b13485d6e00213"

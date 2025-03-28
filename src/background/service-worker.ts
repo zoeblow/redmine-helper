@@ -5,7 +5,7 @@
  * @Email: zoeblow#gmail.com
  * @Date: 2025-03-17 16:18:10
  * @LastEditors: zoeblow
- * @LastEditTime: 2025-03-20 14:28:18
+ * @LastEditTime: 2025-03-28 13:40:35
  * @FilePath: \redmine-helper\src\background\service-worker.ts
  * Copyright (c) 2025 by zoeblow , All Rights Reserved.
  *
@@ -114,7 +114,7 @@ chrome.tabs.onActivated.addListener(async (tab) => {
 //点击图标打开或者刷新页面
 chrome.action.onClicked.addListener(async () => {
   const result = (await chrome.storage.local.get("settings")) || {};
-  const { url = "https://redmine.nuonuo.com", path } = result.settings || {};
+  const { url, path } = result.settings || {};
   if (url) {
     const [baseUrl] = url.split(",");
     const urlName = baseUrl.replace(/\/$/, "");
