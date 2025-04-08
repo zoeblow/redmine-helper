@@ -263,7 +263,7 @@ class FilterableSelect {
     const { settings } = await chrome.storage.local.get("settings");
     const update = document.querySelector("#update") as HTMLElement;
     if (
-      settings.assigned_author !== false &&
+      settings?.assigned_author !== false &&
       update &&
       window?.getComputedStyle(update)?.display === "none"
     ) {
@@ -283,7 +283,7 @@ class FilterableSelect {
     const { settings } = await chrome.storage.local.get("settings");
     const select = event.target as HTMLSelectElement;
     //状态为Resolved时，将完成度设置为100%
-    if (String(select?.value) === "3" && settings.percent !== false) {
+    if (String(select?.value) === "3" && settings?.percent !== false) {
       // 设置原始select value
       const issue_done_ratio = document.querySelector(
         "#issue_done_ratio"
@@ -305,7 +305,7 @@ class FilterableSelect {
     // 状态为Started或Resolved时，设置跟踪
     if (
       (String(select?.value) === "3" || String(select?.value) === "2") &&
-      settings.tracks &&
+      settings?.tracks &&
       // 没有设置为跟踪
       (offZZ = document.querySelector(".icon-fav-off") as HTMLElement) &&
       // 任务单的被指派人和当前用户相同（表示该单子是你的）
@@ -356,7 +356,7 @@ const commentsRequired = async (form: any, required = true) => {
   const { time_entry_comments } = form;
   // console.log(time_entry_comments, required, "time_entry_comments");
   if (time_entry_comments) {
-    if (settings.workingNote !== false && required) {
+    if (settings?.workingNote !== false && required) {
       time_entry_comments.setAttribute("required", true);
     } else {
       time_entry_comments.removeAttribute("required");
@@ -506,7 +506,12 @@ function initCss() {
   document.head.appendChild(style);
 }
 // 初始化所有select
-function initSelects() {
+async function initSelects() {
+  const { settings } = await chrome.storage.local.get("settings");
+  // 查看 url 是不是当前的项目
+  if (!settings?.url || location.href.indexOf(settings?.url) !== 0) {
+    return false;
+  }
   initCss();
 
   document.querySelectorAll("select").forEach((select) => {
