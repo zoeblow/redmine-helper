@@ -17,7 +17,7 @@
 ## 使用
 
 - ✏️ 访问 [chrome 应用商店](https://chrome.google.com/webstore/) 在线安装-暂时无法提供（需翻墙）
-- ✏️ 访问 [Edge 应用商店](https://microsoftedge.microsoft.com/addons/detail/readmine%E5%8A%A9%E6%89%8B/fbiogedcikiecboialbmplkhpcdckcam) 在线安装（需翻墙）
+- ✏️ 访问 [Edge 应用商店](https://microsoftedge.microsoft.com/addons/detail/readmine%E5%8A%A9%E6%89%8B/fbiogedcikiecboialbmplkhpcdckcam) 在线安装
 - ✏️ 下载 [crx 拓展文件](https://github.com/zoeblow/redmine-helper/releases) 手动安装
 
 🍼 首次使用需要在设置页面（右键图标点击选项）配置您的 redmine 网站地址。
