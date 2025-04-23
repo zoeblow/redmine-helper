@@ -461,12 +461,13 @@ function initCss() {
 
       .search-input {
         width: 100%;
-        max-width: 100%!important;
         padding: 4px;
-        box-sizing: border-box;
         z-index: 999;
         max-width: 100%;
+        min-height: 24px;
         position: relative;
+        box-sizing: border-box;
+        max-width: 100%!important;
       }
 
       .options-container {
