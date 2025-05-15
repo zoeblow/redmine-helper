@@ -58,7 +58,7 @@ class FilterableSelect {
     this.wrapper.className = "select-wrapper";
 
     const ids = this.originalSelect.getAttribute("id");
-    this.wrapper.style.width = `${withdEnum[ids] || 188}px`;
+    this.wrapper.style.width = withdEnum[ids] ? `${withdEnum[ids]}px` : "60%";
     // const rect = this.originalSelect.getBoundingClientRect();
     // // 判断当前节点是不是已经显示
     // if (rect.width <= 0) {
@@ -439,7 +439,7 @@ function initCss() {
         border: 1px solid #ddd;
         border-radius: 4px;
         cursor: pointer;
-        z-index: 999;
+        z-index: 1;
         position: relative;
         width: 100%;
       }
@@ -450,7 +450,7 @@ function initCss() {
 
       .input-wrapper::after {
         position: absolute;
-        z-index: 999;
+        z-index: 1;
         right: 7px;
         top: 8px;
         content: "";
@@ -462,7 +462,7 @@ function initCss() {
       .search-input {
         width: 100%;
         padding: 4px;
-        z-index: 999;
+        z-index: 2;
         max-width: 100%;
         min-height: 24px;
         position: relative;
