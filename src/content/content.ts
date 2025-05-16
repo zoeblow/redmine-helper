@@ -378,10 +378,10 @@ const setCommentsRequired = () => {
   //任务单编辑页面，工时填入时，才会检测是否必填
   else if (
     (form = document.getElementById("issue-form")) &&
-    form.time_entry_hours
+    (form as any).time_entry_hours
   ) {
     // console.log(form, form.time_entry_hours.value, "commentsRequired");
-    commentsRequired(form, !!form.time_entry_hours.value.trim());
+    commentsRequired(form, !!(form as any).time_entry_hours.value.trim());
   }
 };
 
@@ -399,7 +399,7 @@ const setCommentsRequired = () => {
 setCommentsRequired();
 
 // 和background通信，更新设置信息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((_request, _sender, _sendResponse) => {
   setCommentsRequired();
   // 返回 true 表示将进行异步响应
   return true;
