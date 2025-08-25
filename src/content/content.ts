@@ -503,6 +503,26 @@ class FilterableSelect {
     南: ["lan"],
   };
 
+  // 静态正则表达式常量（避免重复创建）
+  private readonly CHINESE_REGEX = /[\u4e00-\u9fa5]/g;
+  private readonly PINYIN_REGEX = /^[a-zA-Z\s]+$/;
+
+  /**
+   * 自动检测搜索文本类型并返回对应策略
+   */
+  private getSearchStrategy(searchText: string): "text" | "pinyin" | "both" {
+    const hasChinese = this.CHINESE_REGEX.test(searchText);
+    const isPinyinOnly = this.PINYIN_REGEX.test(searchText.replace(/\s/g, ""));
+
+    if (hasChinese && !isPinyinOnly) {
+      return "text"; // 纯中文搜索
+    } else if (!hasChinese && isPinyinOnly) {
+      return "pinyin"; // 纯拼音搜索
+    } else {
+      return "both"; // 混合搜索（中英文混杂）
+    }
+  }
+
   init() {
     this.createWrapper();
     this.bindEvents();
@@ -626,6 +646,10 @@ class FilterableSelect {
           break;
         }
       }
+      if (this.PINYIN_REGEX.test(char)) {
+        result += char.toLowerCase();
+      }
+      // console.log(result, `char: ${char}`, "result");
     }
     return result;
   }
@@ -658,14 +682,32 @@ class FilterableSelect {
   }
 
   filterOptions(searchText: string | any[] | any) {
-    const reg = /[\u4e00-\u9fa5]/g;
+    // 空值处理：返回所有选项
+    if (!searchText?.trim()) {
+      this.renderOptions(this.options);
+      return;
+    }
+
+    const normalizedSearch = searchText.toLowerCase().trim();
+    const strategy = this.getSearchStrategy(normalizedSearch);
+
     const filtered = this.options.filter((option: any) => {
-      if (reg.test(searchText)) {
-        return option.text.toLowerCase().includes(searchText.toLowerCase());
-      } else {
-        return option.pinyin.toLowerCase().includes(searchText.toLowerCase());
+      // 根据策略选择不同的搜索字段组合
+      switch (strategy) {
+        case "text":
+          return option.text.toLowerCase().includes(normalizedSearch);
+        case "pinyin":
+          return option.pinyin.toLowerCase().includes(normalizedSearch);
+        case "both":
+          return (
+            option.text.toLowerCase().includes(normalizedSearch) ||
+            option.pinyin.toLowerCase().includes(normalizedSearch)
+          );
+        default:
+          return false;
       }
     });
+
     this.renderOptions(filtered);
   }
 
