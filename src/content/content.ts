@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import pkg from "../../package.json";
 
 interface WithdEnum {
   [key: string]: number;
@@ -13,25 +14,6 @@ const withdEnum: WithdEnum = {
   time_entry_activity_id: 146,
   default: 188,
 };
-
-interface CustomResponse {
-  // 定义你的响应数据结构
-  status: string;
-  data?: any;
-}
-
-// 定义类型
-interface PinyinMap {
-  [key: string]: string; // 拼音到汉字的映射
-}
-
-interface PolyphoneMap {
-  [key: string]: string[]; // 多音字到多个拼音的映射
-}
-
-interface DataMap {
-  [key: string]: string[]; // 汉字到拼音的映射
-}
 
 class FilterableSelect {
   wrapper: HTMLDivElement | any;
@@ -1048,7 +1030,9 @@ async function initSelects() {
   }
 
   console.log(
-    "%c Nuo Redmine Helper %c Copyright \xa9 2010-%s\n ",
+    `%cRedmine Helper %cV${
+      pkg.version || "1.0.0"
+    } Copyright \xa9 zoeblow 2016-%s\n`,
     'font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;font-size:24px;color:#FD6E0E;-webkit-text-fill-color:#FD6E0E;-webkit-text-stroke: 1px #FD6E0E;',
     "font-size:12px;color:#999999;",
     new Date().getFullYear()

@@ -5,17 +5,11 @@
  * @Email: zoeblow#gmail.com
  * @Date: 2025-03-17 16:18:10
  * @LastEditors: zoeblow
- * @LastEditTime: 2025-08-20 16:46:03
+ * @LastEditTime: 2025-08-29 15:07:36
  * @FilePath: \redmine-helper\src\background\service-worker.ts
  * Copyright (c) 2025 by zoeblow , All Rights Reserved.
  *
  */
-console.log(
-  "%c Nuo Redmine Helper %c Copyright \xa9 2010-%s\n ",
-  'font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;font-size:24px;color:#FD6E0E;-webkit-text-fill-color:#FD6E0E;-webkit-text-stroke: 1px #FD6E0E;',
-  "font-size:12px;color:#999999;",
-  new Date().getFullYear()
-);
 chrome.management.getSelf((self) => {
   if (self.installType === "development") {
     // 监听的文件列表
@@ -99,17 +93,6 @@ chrome.tabs.onActivated.addListener(async (tab) => {
   const result = (await chrome.storage.local.get("settings")) || {};
   chrome.tabs.sendMessage(tab.tabId, result.settings);
 });
-
-// chrome.runtime.onMessage.addListener(
-//   async (request: any, sender: any, sendResponse: any) => {
-//     const result = (await chrome.storage.local.get("settings")) || {};
-//     console.log(request, "request");
-//     //和content_script通信，用于页面刷新或打开时获取设置信息
-//     if (request === "settings_init") {
-//       sendResponse(result.settings);
-//     }
-//   }
-// );
 
 //点击图标打开或者刷新页面
 chrome.action.onClicked.addListener(async () => {
