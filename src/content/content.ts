@@ -601,7 +601,7 @@ class FilterableSelect {
       (option: any) => ({
         value: option.value,
         text: option.text,
-        pinyin: this.pinyin(option.text),
+        pinyin: this.pinyin(option.text.replace(/\s+/g, "")),
         disabled: option.disabled,
       })
     );
@@ -672,8 +672,10 @@ class FilterableSelect {
 
     const normalizedSearch = searchText.toLowerCase().trim();
     const strategy = this.getSearchStrategy(normalizedSearch);
+    // console.log(normalizedSearch, strategy, "strategy");
 
     const filtered = this.options.filter((option: any) => {
+      console.log(option.text, option.pinyin, "option");
       // 根据策略选择不同的搜索字段组合
       switch (strategy) {
         case "text":

@@ -1,6 +1,6 @@
 {
   "name": "redmine助手",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "redmine助手可以帮助您改善redmine的使用体验。比如将默认的下拉框改为可以搜索、设置完任务单状态后自动跟踪该任务等。",
   "manifest_version": 3,
   "home": "https://github.com/zoeblow/redmine-helper",
