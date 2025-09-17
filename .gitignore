@@ -9,9 +9,11 @@ lerna-debug.log*
 
 node_modules
 *.local
+CLAUDE.md
 
 # Editor directories and files
 .vscode/*
+.claude/*
 !.vscode/extensions.json
 .idea
 .DS_Store

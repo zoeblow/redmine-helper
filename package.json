@@ -1,16 +1,11 @@
 {
   "name": "redmine-helper",
   "private": true,
-  "version": "0.0.8",
+  "version": "0.0.9",
   "author": "zoeblow@gmail.com",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "watch-build": "vite --watch build",
-    "watch-json": "node watch.mjs",
-    "preview": "vite preview"
+    "build": "vite --watch build"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

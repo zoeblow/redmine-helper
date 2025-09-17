@@ -1,12 +1,72 @@
+/**
+ * @fileoverview Redmine Helper 内容脚本
+ * @description 主要功能包括：替换原生下拉框为可搜索组件、支持拼音搜索、自动任务分配和状态跟踪
+ * @author zoeblow
+ * @email zoeblow#gmail.com
+ * @version 1.0.0
+ * @copyright Copyright (c) 2025 by zoeblow, All Rights Reserved.
+ */
+
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import pkg from "../../package.json";
 
-interface WithdEnum {
+/**
+ * 下拉选项接口
+ * @interface SelectOption
+ * @property {string} value - 选项值
+ * @property {string} text - 显示文本
+ * @property {string} pinyin - 拼音转换结果
+ * @property {boolean} disabled - 是否禁用
+ */
+interface SelectOption {
+  value: string;
+  text: string;
+  pinyin: string;
+  disabled: boolean;
+}
+
+/**
+ * 扩展设置接口
+ * @interface Settings
+ * @property {string} [url] - Redmine URL
+ * @property {boolean} [assigned_author] - 是否自动分配给作者
+ * @property {boolean} [percent] - 是否自动设置完成度
+ * @property {boolean} [tracks] - 是否自动跟踪
+ * @property {boolean} [workingNote] - 是否工作备注必填
+ * @property {boolean} [time_entry_comments] - 是否时间条目注释必填
+ */
+interface Settings {
+  url?: string;
+  assigned_author?: boolean;
+  percent?: boolean;
+  tracks?: boolean;
+  workingNote?: boolean;
+  time_entry_comments?: boolean;
+}
+
+/**
+ * 宽度配置接口
+ * @interface WidthConfig
+ * @property {number} [key] - 元素ID到宽度的映射
+ */
+interface WidthConfig {
   [key: string]: number;
 }
-// 宽度枚举
-const withdEnum: WithdEnum = {
+
+/**
+ * 搜索策略类型
+ * @type {SearchStrategy}
+ * @description 定义搜索方式：文本、拼音或两者
+ */
+type SearchStrategy = "text" | "pinyin" | "both";
+
+/**
+ * 宽度配置常量
+ * @const {WidthConfig} WIDTH_CONFIG
+ * @description 定义不同元素的默认宽度
+ */
+const WIDTH_CONFIG: WidthConfig = {
   project_quick_jump_box: 259,
   issue_project_id: 259,
   issue_tracker_id: 133,
@@ -15,22 +75,112 @@ const withdEnum: WithdEnum = {
   default: 188,
 };
 
-class FilterableSelect {
-  wrapper: HTMLDivElement | any;
-  input: HTMLDivElement | any;
-  search: HTMLDivElement | any;
-  optionsContainer: HTMLDivElement | any;
-  originalSelect: any;
-  options: any;
-  inputBox: HTMLDivElement | any;
-  searchBox: HTMLDivElement | any;
-  constructor(originalSelect: Node | undefined) {
-    this.originalSelect = originalSelect;
-    this.init();
-  }
+/**
+ * CSS 类名常量
+ * @const {object} CSS_CLASSES
+ * @description 定义所有使用的 CSS 类名
+ */
+const CSS_CLASSES = {
+  WRAPPER: "select-wrapper",
+  INPUT: "select-input",
+  INPUT_WRAPPER: "input-wrapper",
+  SEARCH_BOX: "searchBox-wrapper",
+  SEARCH_INPUT: "search-input",
+  OPTIONS_CONTAINER: "options-container",
+  OPTION_ITEM: "option-item",
+  NATIVE_SELECT: "native-select",
+  DISABLED: "disabled",
+  HIGHLIGHT: "highlight",
+} as const;
 
-  // 在类中添加拼音映射数据
-  private pinyinMap: { [key: string]: string } = {
+/**
+ * 防抖函数
+ * @template T
+ * @param {T} func - 需要防抖的函数
+ * @param {number} delay - 延迟时间（毫秒）
+ * @returns {T} 防抖后的函数
+ * @description 防止函数被频繁调用，只在指定延迟后执行最后一次调用
+ */
+const debounce = <T extends (...args: any[]) => void>(
+  func: T,
+  delay: number
+): T => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  return ((...args: any[]) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => func(...args), delay);
+  }) as T;
+};
+
+/**
+ * 优化重排的函数
+ * @param {() => void} callback - 回调函数
+ * @returns {void}
+ * @description 使用 requestAnimationFrame 优化 DOM 操作，减少重排
+ */
+const optimizeReflow = (callback: () => void): void => {
+  requestAnimationFrame(() => {
+    callback();
+  });
+};
+
+/**
+ * 创建优化的 DOM 元素
+ * @param {string} tagName - 标签名
+ * @param {string} [className] - CSS 类名
+ * @param {string} [textContent] - 文本内容
+ * @returns {HTMLElement} 创建的 DOM 元素
+ * @description 高效创建并配置 DOM 元素
+ */
+const createOptimizedElement = (
+  tagName: string,
+  className?: string,
+  textContent?: string
+): HTMLElement => {
+  const element = document.createElement(tagName);
+  if (className) element.className = className;
+  if (textContent) element.textContent = textContent;
+  return element;
+};
+
+/**
+ * 获取扩展设置
+ * @returns {Promise<Settings>} 设置对象
+ * @description 从 Chrome 存储中获取扩展设置
+ */
+const getSettings = async (): Promise<Settings> => {
+  try {
+    const { settings } = await chrome.storage.local.get("settings");
+    return settings || {};
+  } catch (error) {
+    console.error("Error getting settings:", error);
+    return {};
+  }
+};
+
+/**
+ * 检查当前站点是否启用扩展
+ * @returns {Promise<boolean>} 是否启用
+ * @description 检查当前页面 URL 是否匹配设置中的 Redmine URL
+ */
+const isCurrentSiteEnabled = async (): Promise<boolean> => {
+  try {
+    const settings = await getSettings();
+    return !!(settings.url && location.href.indexOf(settings.url) === 0);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * 拼音转换器工具类
+ * @class PinyinConverter
+ * @description 提供中文到拼音的转换功能，支持多音字处理
+ */
+class PinyinConverter {
+  private static instance: PinyinConverter;
+  private pinyinMap: Record<string, string> | null = null;
+  private readonly defaultPinyinMap: Record<string, string> = {
     a: "啊锕",
     ai: "埃挨哎唉哀皑癌蔼矮艾碍爱隘诶捱嗳嗌嫒瑷暧砹锿霭",
     an: "鞍氨安俺按暗岸胺案谙埯揞犴庵桉铵鹌顸黯",
@@ -433,8 +583,8 @@ class FilterableSelect {
     zuo: "昨左佐柞做作坐座阝阼胙祚酢",
   };
 
-  // 多音字处理
-  private polyphoneMap: { [key: string]: string[] } = {
+  private polyphoneMap: Record<string, string[]> | null = null;
+  private readonly defaultPolyphoneMap: Record<string, string[]> = {
     贲: ["bi"],
     薄: ["bao"],
     颉: ["xie", "jia"],
@@ -485,123 +635,422 @@ class FilterableSelect {
     南: ["lan"],
   };
 
-  // 静态正则表达式常量（避免重复创建）
   private readonly CHINESE_REGEX = /[\u4e00-\u9fa5]/g;
   private readonly PINYIN_REGEX = /^[a-zA-Z\s]+$/;
 
   /**
-   * 自动检测搜索文本类型并返回对应策略
+   * 获取单例实例
+   * @static
+   * @returns {PinyinConverter} 单例实例
+   * @description 实现单例模式，确保只有一个转换器实例
    */
-  private getSearchStrategy(searchText: string): "text" | "pinyin" | "both" {
+  static getInstance(): PinyinConverter {
+    if (!PinyinConverter.instance) {
+      PinyinConverter.instance = new PinyinConverter();
+    }
+    return PinyinConverter.instance;
+  }
+
+  /**
+   * 初始化拼音映射表
+   * @private
+   * @returns {void}
+   * @description 初始化拼音和多音字映射表
+   */
+  private initMaps(): void {
+    if (!this.pinyinMap) {
+      this.pinyinMap = { ...this.defaultPinyinMap };
+    }
+    if (!this.polyphoneMap) {
+      this.polyphoneMap = { ...this.defaultPolyphoneMap };
+    }
+  }
+
+  /**
+   * 转换中文字符为拼音
+   * @param {string} text - 要转换的文本
+   * @returns {string} 转换后的拼音
+   * @description 将中文字符转换为拼音，支持多音字处理
+   */
+  convert(text: string): string {
+    this.initMaps();
+
+    let result = "";
+    for (const char of text) {
+      if (this.polyphoneMap![char]) {
+        result += this.polyphoneMap![char][0];
+        continue;
+      }
+
+      let found = false;
+      for (const [pinyin, chars] of Object.entries(this.pinyinMap!)) {
+        if (chars.includes(char)) {
+          result += pinyin;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found && this.PINYIN_REGEX.test(char)) {
+        result += char.toLowerCase();
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 获取搜索策略
+   * @param {string} searchText - 搜索文本
+   * @returns {SearchStrategy} 搜索策略
+   * @description 根据输入文本类型自动选择搜索策略
+   */
+  getSearchStrategy(searchText: string): SearchStrategy {
     const hasChinese = this.CHINESE_REGEX.test(searchText);
     const isPinyinOnly = this.PINYIN_REGEX.test(searchText.replace(/\s/g, ""));
 
     if (hasChinese && !isPinyinOnly) {
-      return "text"; // 纯中文搜索
+      return "text";
     } else if (!hasChinese && isPinyinOnly) {
-      return "pinyin"; // 纯拼音搜索
+      return "pinyin";
     } else {
-      return "both"; // 混合搜索（中英文混杂）
+      return "both";
+    }
+  }
+}
+
+/**
+ * 虚拟滚动渲染器
+ * @class VirtualScrollRenderer
+ * @description 实现大列表的虚拟滚动，提高性能
+ */
+class VirtualScrollRenderer {
+  private container: HTMLElement;
+  private itemHeight: number;
+  private visibleCount: number;
+  private totalItems: SelectOption[];
+  private startIndex = 0;
+
+  constructor(container: HTMLElement, itemHeight = 28, maxHeight = 256) {
+    this.container = container;
+    this.itemHeight = itemHeight;
+    this.visibleCount = Math.ceil(maxHeight / itemHeight);
+    this.totalItems = [];
+  }
+
+  /**
+   * 渲染选项列表
+   * @param {SelectOption[]} items - 选项列表
+   * @param {(option: SelectOption) => void} onItemClick - 点击事件处理函数
+   * @returns {void}
+   * @description 根据列表大小选择普通或虚拟滚动渲染
+   */
+  render(
+    items: SelectOption[],
+    onItemClick: (option: SelectOption) => void
+  ): void {
+    this.totalItems = items;
+
+    if (items.length <= this.visibleCount) {
+      this.renderNormal(items, onItemClick);
+      return;
+    }
+
+    this.renderVirtual(onItemClick);
+  }
+
+  /**
+   * 普通渲染模式
+   * @private
+   * @param {SelectOption[]} items - 选项列表
+   * @param {(option: SelectOption) => void} onItemClick - 点击事件处理函数
+   * @returns {void}
+   * @description 对于小列表，直接渲染所有项目
+   */
+  private renderNormal(
+    items: SelectOption[],
+    onItemClick: (option: SelectOption) => void
+  ): void {
+    const fragment = document.createDocumentFragment();
+
+    items.forEach((option) => {
+      const div = createOptimizedElement(
+        "div",
+        `${CSS_CLASSES.OPTION_ITEM} ${
+          option.disabled ? CSS_CLASSES.DISABLED : ""
+        }`,
+        option.text
+      ) as HTMLDivElement;
+
+      div.dataset.value = option.pinyin;
+
+      if (!option.disabled) {
+        div.addEventListener("click", () => onItemClick(option));
+      }
+
+      fragment.appendChild(div);
+    });
+
+    this.container.innerHTML = "";
+    this.container.appendChild(fragment);
+  }
+
+  /**
+   * 虚拟滚动渲染模式
+   * @private
+   * @param {(option: SelectOption) => void} onItemClick - 点击事件处理函数
+   * @returns {void}
+   * @description 对于大列表，只渲染可见区域的项目
+   */
+  private renderVirtual(onItemClick: (option: SelectOption) => void): void {
+    const totalHeight = this.totalItems.length * this.itemHeight;
+    const endIndex = Math.min(
+      this.startIndex + this.visibleCount,
+      this.totalItems.length
+    );
+
+    this.container.innerHTML = "";
+    this.container.style.height = `${Math.min(256, totalHeight)}px`;
+    this.container.style.overflowY = "auto";
+
+    const spacerTop = createOptimizedElement("div");
+    spacerTop.style.height = `${this.startIndex * this.itemHeight}px`;
+    this.container.appendChild(spacerTop);
+
+    const visibleItems = this.totalItems.slice(this.startIndex, endIndex);
+    const fragment = document.createDocumentFragment();
+
+    visibleItems.forEach((option) => {
+      const div = createOptimizedElement(
+        "div",
+        `${CSS_CLASSES.OPTION_ITEM} ${
+          option.disabled ? CSS_CLASSES.DISABLED : ""
+        }`,
+        option.text
+      ) as HTMLDivElement;
+
+      div.dataset.value = option.pinyin;
+      div.style.height = `${this.itemHeight}px`;
+      div.style.lineHeight = `${this.itemHeight}px`;
+
+      if (!option.disabled) {
+        div.addEventListener("click", () => onItemClick(option));
+      }
+
+      fragment.appendChild(div);
+    });
+
+    this.container.appendChild(fragment);
+
+    const spacerBottom = createOptimizedElement("div");
+    spacerBottom.style.height = `${
+      (this.totalItems.length - endIndex) * this.itemHeight
+    }px`;
+    this.container.appendChild(spacerBottom);
+
+    this.container.onscroll = debounce(() => {
+      const scrollTop = this.container.scrollTop;
+      const newStartIndex = Math.floor(scrollTop / this.itemHeight);
+
+      if (newStartIndex !== this.startIndex) {
+        this.startIndex = newStartIndex;
+        this.renderVirtual(onItemClick);
+      }
+    }, 16);
+  }
+}
+/**
+ * 可搜索下拉选择器主类
+ * @class FilterableSelect
+ * @description 将原生 HTML select 元素替换为支持搜索和拼音输入的自定义组件
+ */
+class FilterableSelect {
+  private wrapper!: HTMLDivElement;
+  private input!: HTMLInputElement;
+  private search!: HTMLInputElement;
+  private optionsContainer!: HTMLDivElement;
+  private originalSelect: HTMLSelectElement;
+  private options!: SelectOption[];
+  private inputBox!: HTMLSpanElement;
+  private searchBox!: HTMLDivElement;
+  private pinyinConverter: PinyinConverter;
+  private debouncedFilter: (searchText: string) => void;
+  private abortController = new AbortController();
+  private virtualRenderer!: VirtualScrollRenderer;
+
+  /**
+   * 构造函数
+   * @param {HTMLSelectElement} originalSelect - 原生 select 元素
+   * @description 初始化可搜索下拉选择器
+   */
+  constructor(originalSelect: HTMLSelectElement) {
+    this.originalSelect = originalSelect;
+    this.pinyinConverter = PinyinConverter.getInstance();
+    this.debouncedFilter = debounce(this.performFilter.bind(this), 150);
+    this.init();
+  }
+
+  /**
+   * 添加优化的事件监听器
+   * @private
+   * @param {Element | Document} element - 目标元素
+   * @param {string} event - 事件类型
+   * @param {EventListener} handler - 事件处理函数
+   * @param {AddEventListenerOptions} [options] - 事件选项
+   * @returns {void}
+   * @description 使用 AbortController 统一管理事件监听器
+   */
+  private addEventListenerOptimized(
+    element: Element | Document,
+    event: string,
+    handler: EventListener,
+    options?: AddEventListenerOptions
+  ): void {
+    const finalOptions = { ...options, signal: this.abortController.signal };
+    element.addEventListener(event, handler, finalOptions);
+  }
+
+  /**
+   * 销毁组件
+   * @returns {void}
+   * @description 清理事件监听器和 DOM 元素，释放内存
+   */
+  destroy(): void {
+    this.abortController.abort();
+
+    if (this.wrapper?.parentNode) {
+      this.wrapper.parentNode.removeChild(this.wrapper);
+    }
+
+    if (this.optionsContainer) {
+      this.optionsContainer.innerHTML = "";
     }
   }
 
-  init() {
+  /**
+   * 初始化组件
+   * @private
+   * @returns {void}
+   * @description 创建 DOM 结构、绑定事件和同步选项
+   */
+  private init(): void {
     this.createWrapper();
+    this.virtualRenderer = new VirtualScrollRenderer(this.optionsContainer);
     this.bindEvents();
     this.syncOptions();
     this.otherInit();
   }
 
-  addEventListener(selector: string, eventName: string, handler: any) {
+  /**
+   * 添加事件监听器
+   * @private
+   * @param {string} selector - CSS 选择器
+   * @param {string} eventName - 事件名称
+   * @param {(e: Event) => void} handler - 事件处理函数
+   * @returns {void}
+   * @description 为匹配的元素批量添加事件监听器
+   */
+  private addEventListener(
+    selector: string,
+    eventName: string,
+    handler: (e: Event) => void
+  ): void {
     document.querySelectorAll(selector).forEach((element) => {
-      element.addEventListener(eventName, (e) => handler.call(this, e));
+      const boundHandler = (e: Event) => handler.call(this, e);
+      this.addEventListenerOptimized(element, eventName, boundHandler);
     });
   }
 
-  createWrapper() {
+  /**
+   * 创建包装器 DOM 结构
+   * @private
+   * @returns {void}
+   * @description 创建输入框、搜索框和选项容器
+   */
+  private createWrapper(): void {
     this.wrapper = document.createElement("div");
-    this.wrapper.className = "select-wrapper";
+    this.wrapper.className = CSS_CLASSES.WRAPPER;
 
-    const ids = this.originalSelect.getAttribute("id");
-    this.wrapper.style.width = withdEnum[ids] ? `${withdEnum[ids]}px` : "60%";
-    // const rect = this.originalSelect.getBoundingClientRect();
-    // // 判断当前节点是不是已经显示
-    // if (rect.width <= 0) {
-    //   return;
-    // }
-    // 创建输入框
-    this.input = document.createElement("input");
-    this.input.className = "select-input";
+    const elementId = this.originalSelect.getAttribute("id") || "";
+    const width = WIDTH_CONFIG[elementId] || WIDTH_CONFIG.default;
+    this.wrapper.style.width = `${width}px`;
+
+    this.input = document.createElement("input") as HTMLInputElement;
+    this.input.className = CSS_CLASSES.INPUT;
     this.input.readOnly = true;
 
-    this.inputBox = document.createElement("span");
-    this.inputBox.className = "input-wrapper";
+    this.inputBox = document.createElement("span") as HTMLSpanElement;
+    this.inputBox.className = CSS_CLASSES.INPUT_WRAPPER;
     this.inputBox.appendChild(this.input);
 
     this.searchBox = document.createElement("div");
-    this.searchBox.className = "searchBox-wrapper";
+    this.searchBox.className = CSS_CLASSES.SEARCH_BOX;
     this.searchBox.style.display = "none";
-    this.searchBox.style.width = `${withdEnum[ids] || 188}px`;
+    this.searchBox.style.width = `${width}px`;
 
-    // 创建搜索框
-    this.search = document.createElement("input");
-    this.search.className = "search-input";
+    this.search = document.createElement("input") as HTMLInputElement;
+    this.search.className = CSS_CLASSES.SEARCH_INPUT;
     this.search.placeholder = "Search...";
 
-    // 创建选项容器
     this.optionsContainer = document.createElement("div");
-    this.optionsContainer.className = "options-container";
-
-    // 组装结构
-    this.wrapper.appendChild(this.inputBox);
+    this.optionsContainer.className = CSS_CLASSES.OPTIONS_CONTAINER;
 
     this.searchBox.appendChild(this.search);
     this.searchBox.appendChild(this.optionsContainer);
 
+    this.wrapper.appendChild(this.inputBox);
     this.wrapper.appendChild(this.searchBox);
 
-    // this.originalSelect.parentNode.insertBefore(
-    //   this.wrapper,
-    //   this.originalSelect
-    // );
+    const parentElement = this.originalSelect.parentNode;
+    if (!parentElement) return;
 
-    // 插入到DOM
-    const parentElement = this.originalSelect.parentNode; //find parent element
-    if (parentElement.lastChild == this.originalSelect) {
-      //To determime确定,下决心 whether the last element of the parent element is the same as the target element
+    if (parentElement.lastChild === this.originalSelect) {
       parentElement.appendChild(this.wrapper);
     } else {
       parentElement.insertBefore(this.wrapper, this.originalSelect.nextSibling);
     }
-    this.originalSelect.classList.add("native-select");
+
+    this.originalSelect.classList.add(CSS_CLASSES.NATIVE_SELECT);
   }
 
-  bindEvents() {
-    // 输入框点击
-    this.input.addEventListener("click", () => this.toggleDropdown());
-
-    // 搜索框输入
-    this.search.addEventListener("input", (e: any) =>
-      this.filterOptions(e.target.value)
+  /**
+   * 绑定事件监听器
+   * @private
+   * @returns {void}
+   * @description 绑定点击、输入、键盘等事件
+   */
+  private bindEvents(): void {
+    this.addEventListenerOptimized(this.input, "click", () =>
+      this.toggleDropdown()
     );
 
-    // 文档点击关闭
-    document.addEventListener("click", (e) => {
-      if (!this.wrapper.contains(e.target)) {
+    this.addEventListenerOptimized(this.search, "input", (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      this.debouncedFilter(target.value);
+    });
+
+    this.addEventListenerOptimized(document, "click", (e: Event) => {
+      if (!this.wrapper.contains(e.target as Node)) {
         this.closeDropdown();
       }
     });
 
-    // 键盘事件
-    this.wrapper.addEventListener("keydown", (e: any) => this.handleKeydown(e));
+    this.addEventListenerOptimized(this.wrapper, "keydown", (e: Event) =>
+      this.handleKeydown(e as KeyboardEvent)
+    );
   }
 
-  syncOptions() {
+  /**
+   * 同步选项数据
+   * @private
+   * @returns {void}
+   * @description 从原生 select 元素读取选项并转换为内部数据结构
+   */
+  private syncOptions(): void {
     this.options = Array.from(this.originalSelect.options).map(
-      (option: any) => ({
+      (option: HTMLOptionElement): SelectOption => ({
         value: option.value,
         text: option.text,
-        pinyin: this.pinyin(option.text.replace(/\s+/g, "")),
+        pinyin: this.pinyinConverter.convert(option.text.replace(/\s+/g, "")),
         disabled: option.disabled,
       })
     );
@@ -610,73 +1059,66 @@ class FilterableSelect {
     this.renderOptions(this.options);
   }
 
-  pinyin(text: string) {
-    // 根据汉字获取拼音
-    // 根据 pinyinMap 和 polyphoneMap 处理多音字
-    let result = "";
-    for (const char of text) {
-      // 优先检查多音字
-      if (this.polyphoneMap[char]) {
-        result += this.polyphoneMap[char][0]; // 默认取第一个拼音
-        continue;
-      }
-
-      // 普通汉字处理
-      for (const [pinyin, chars] of Object.entries(this.pinyinMap)) {
-        if (chars.includes(char)) {
-          result += pinyin;
-          break;
-        }
-      }
-      if (this.PINYIN_REGEX.test(char)) {
-        result += char.toLowerCase();
-      }
-      // console.log(result, `char: ${char}`, "result");
-    }
-    return result;
+  /**
+   * 渲染选项列表
+   * @private
+   * @param {SelectOption[]} options - 选项数据
+   * @returns {void}
+   * @description 使用虚拟滚动渲染器渲染选项
+   */
+  private renderOptions(options: SelectOption[]): void {
+    this.virtualRenderer.render(options, (option) => this.selectOption(option));
   }
 
-  renderOptions(options: any[] | any) {
-    this.optionsContainer.innerHTML = "";
-    options.forEach((option: any) => {
-      const div = document.createElement("div");
-      div.className = `option-item ${option.disabled ? "disabled" : ""}`;
-      div.textContent = option.text;
-      div.dataset.value = this.pinyin(option.text.replace(/\s+/g, ""));
-      if (!option.disabled) {
-        div.addEventListener("click", () => this.selectOption(option));
-      }
+  /**
+   * 切换下拉菜单显示状态
+   * @private
+   * @returns {void}
+   * @description 打开或关闭下拉选项列表
+   */
+  private toggleDropdown(): void {
+    const isOpen = this.searchBox.style.display === "block";
 
-      this.optionsContainer.appendChild(div);
+    optimizeReflow(() => {
+      this.searchBox.style.display = isOpen ? "none" : "block";
+      if (!isOpen) {
+        // Use setTimeout to ensure the element is visible before focusing
+        setTimeout(() => this.search.focus(), 0);
+      }
     });
   }
 
-  toggleDropdown() {
-    const isOpen = this.searchBox.style.display === "block";
-    this.searchBox.style.display = isOpen ? "none" : "block";
-    if (!isOpen) this.search.focus();
+  /**
+   * 关闭下拉菜单
+   * @private
+   * @returns {void}
+   * @description 隐藏下拉选项列表并重置搜索
+   */
+  private closeDropdown(): void {
+    optimizeReflow(() => {
+      this.searchBox.style.display = "none";
+      this.search.value = "";
+      this.renderOptions(this.options);
+    });
   }
 
-  closeDropdown() {
-    this.searchBox.style.display = "none";
-    this.search.value = "";
-    this.renderOptions(this.options);
-  }
-
-  filterOptions(searchText: string | any[] | any) {
-    // 空值处理：返回所有选项
+  /**
+   * 执行搜索过滤
+   * @private
+   * @param {string} searchText - 搜索文本
+   * @returns {void}
+   * @description 根据搜索文本过滤选项列表
+   */
+  private performFilter(searchText: string): void {
     if (!searchText?.trim()) {
       this.renderOptions(this.options);
       return;
     }
 
     const normalizedSearch = searchText.toLowerCase().trim();
-    const strategy = this.getSearchStrategy(normalizedSearch);
-    // console.log(normalizedSearch, strategy, "strategy");
+    const strategy = this.pinyinConverter.getSearchStrategy(normalizedSearch);
 
-    const filtered = this.options.filter((option: any) => {
-      console.log(option.text, option.pinyin, "option");
-      // 根据策略选择不同的搜索字段组合
+    const filtered = this.options.filter((option) => {
       switch (strategy) {
         case "text":
           return option.text.toLowerCase().includes(normalizedSearch);
@@ -695,17 +1137,30 @@ class FilterableSelect {
     this.renderOptions(filtered);
   }
 
-  selectOption(option: any) {
+  /**
+   * 选择指定选项
+   * @private
+   * @param {SelectOption} option - 要选择的选项
+   * @returns {void}
+   * @description 设置选中值并触发原生select的change事件
+   */
+  private selectOption(option: SelectOption): void {
     this.input.value = option.text;
     this.originalSelect.value = option.value;
     this.closeDropdown();
 
-    // 触发原生change事件
     const event = new Event("change", { bubbles: true });
     this.originalSelect.dispatchEvent(event);
   }
 
-  handleKeydown(e: any) {
+  /**
+   * 处理键盘事件
+   * @private
+   * @param {KeyboardEvent} e - 键盘事件对象
+   * @returns {void}
+   * @description 处理方向键导航、回车选择、ESC关闭等键盘操作
+   */
+  private handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
       this.closeDropdown();
       return;
@@ -713,54 +1168,70 @@ class FilterableSelect {
 
     if (e.key === "Enter" && this.search === document.activeElement) {
       const visibleOptions = this.optionsContainer.querySelectorAll(
-        ".option-item:not(.disabled)"
+        `.${CSS_CLASSES.OPTION_ITEM}:not(.${CSS_CLASSES.DISABLED})`
       );
       if (visibleOptions.length > 0) {
-        this.selectOption(
-          this.options.find(
-            (o: any) => o.text === visibleOptions[0].textContent
-          )
+        const selectedOption = this.options.find(
+          (option) =>
+            option.text === (visibleOptions[0] as HTMLElement).textContent
         );
+        if (selectedOption) {
+          this.selectOption(selectedOption);
+        }
       }
       return;
     }
 
     if (["ArrowUp", "ArrowDown"].includes(e.key)) {
       e.preventDefault();
-      const currentHighlight =
-        this.optionsContainer.querySelector(".highlight");
-      let nextItem;
-
-      if (!currentHighlight) {
-        nextItem = this.optionsContainer.querySelector(
-          ".option-item:not(.disabled)"
-        );
-      } else {
-        const direction = e.key === "ArrowDown" ? 1 : -1;
-        nextItem =
-          currentHighlight[
-            direction === 1 ? "nextElementSibling" : "previousElementSibling"
-          ];
-        while (nextItem && nextItem.classList.contains("disabled")) {
-          nextItem =
-            nextItem[
-              direction === 1 ? "nextElementSibling" : "previousElementSibling"
-            ];
-        }
-      }
-
-      if (nextItem) {
-        if (currentHighlight) currentHighlight.classList.remove("highlight");
-        nextItem.classList.add("highlight");
-        nextItem.scrollIntoView({ block: "nearest" });
-      }
+      this.navigateOptions(e.key === "ArrowDown");
     }
   }
 
-  otherInit() {
-    // 将“指派给”设置为任务单作者
+  /**
+   * 导航选项列表
+   * @private
+   * @param {boolean} isDown - 是否向下导航
+   * @returns {void}
+   * @description 使用键盘上下箭头导航选项列表
+   */
+  private navigateOptions(isDown: boolean): void {
+    const currentHighlight = this.optionsContainer.querySelector(
+      `.${CSS_CLASSES.HIGHLIGHT}`
+    );
+    let nextItem: Element | null;
+
+    if (!currentHighlight) {
+      nextItem = this.optionsContainer.querySelector(
+        `.${CSS_CLASSES.OPTION_ITEM}:not(.${CSS_CLASSES.DISABLED})`
+      );
+    } else {
+      nextItem = isDown
+        ? currentHighlight.nextElementSibling
+        : currentHighlight.previousElementSibling;
+
+      while (nextItem && nextItem.classList.contains(CSS_CLASSES.DISABLED)) {
+        nextItem = isDown
+          ? nextItem.nextElementSibling
+          : nextItem.previousElementSibling;
+      }
+    }
+
+    if (nextItem) {
+      currentHighlight?.classList.remove(CSS_CLASSES.HIGHLIGHT);
+      nextItem.classList.add(CSS_CLASSES.HIGHLIGHT);
+      nextItem.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  /**
+   * 其他初始化操作
+   * @private
+   * @returns {void}
+   * @description 执行额外的初始化，如自动分配、状态监听等
+   */
+  private otherInit(): void {
     this.changeAssign();
-    // 状态切换
     this.addEventListener("#issue_status_id", "change", this.statusChange);
     this.addEventListener(
       "#issue-form #time_entry_hours",
@@ -769,160 +1240,231 @@ class FilterableSelect {
     );
   }
 
-  // 设置 自定义 select DOM value
-  setSelectValue(ele: HTMLElement, text: string) {
-    (
-      ele!.parentNode!.querySelector(".select-input") as HTMLInputElement
-    ).value = text;
-  }
-
-  async changeAssign() {
-    const { settings } = await chrome.storage.local.get("settings");
-    const update = document.querySelector("#update") as HTMLElement;
-    if (
-      settings?.assigned_author !== false &&
-      update &&
-      window?.getComputedStyle(update)?.display === "none"
-    ) {
-      const issue_assigned_to_id = document.querySelector(
-        "#issue_assigned_to_id"
-      ) as HTMLElement;
-      const userNode = document.querySelector(".author > .user") as HTMLElement;
-      const text = userNode.innerText;
-      const id = userNode?.getAttribute("href")?.replace("/users/", "") ?? "";
-      // 设置原始select value
-      (issue_assigned_to_id as HTMLInputElement).value = id;
-      // 设置DOM value
-      this.setSelectValue(issue_assigned_to_id, text);
+  /**
+   * 设置选择器的显示值
+   * @private
+   * @param {HTMLElement} element - 目标元素
+   * @param {string} text - 显示文本
+   * @returns {void}
+   * @description 更新自定义选择器的显示文本
+   */
+  private setSelectValue(element: HTMLElement, text: string): void {
+    const selectInput = element.parentNode?.querySelector(
+      `.${CSS_CLASSES.INPUT}`
+    ) as HTMLInputElement;
+    if (selectInput) {
+      selectInput.value = text;
     }
   }
-  async statusChange(event: Event) {
-    const { settings } = await chrome.storage.local.get("settings");
-    const select = event.target as HTMLSelectElement;
-    //状态为Resolved时，将完成度设置为100%
-    if (String(select?.value) === "3" && settings?.percent !== false) {
-      // 设置原始select value
-      const issue_done_ratio = document.querySelector(
-        "#issue_done_ratio"
-      ) as HTMLElement;
-      (issue_done_ratio as HTMLInputElement).value = "100";
-      // 设置DOM value
-      this.setSelectValue(issue_done_ratio, "100%");
-    }
-    let offZZ;
-    const loggedas_user = document.querySelector(
-      "#loggedas > .user"
-    ) as HTMLElement;
 
-    const assigned_user = document.querySelector(
-      ".assigned-to > .user"
-    ) as HTMLElement;
+  /**
+   * 自动分配任务给作者
+   * @private
+   * @returns {Promise<void>}
+   * @description 在编辑任务时自动将任务分配给原作者
+   */
+  private async changeAssign(): Promise<void> {
+    try {
+      const settings = await getSettings();
+      const updateElement = document.querySelector("#update") as HTMLElement;
 
-    // console.log("settings", settings, String(select?.value));
-    // 状态为Started或Resolved时，设置跟踪
-    if (
-      (String(select?.value) === "3" || String(select?.value) === "2") &&
-      settings?.tracks &&
-      // 没有设置为跟踪
-      (offZZ = document.querySelector(".icon-fav-off") as HTMLElement) &&
-      // 任务单的被指派人和当前用户相同（表示该单子是你的）
-      assigned_user.getAttribute("href") === loggedas_user.getAttribute("href")
-    ) {
-      offZZ.classList?.remove("icon-fav-off");
-      offZZ.classList?.add("icon-fav");
-      offZZ.textContent = "取消跟踪";
-      offZZ.setAttribute("data-method", "delete");
+      if (
+        settings?.assigned_author !== false &&
+        updateElement &&
+        window.getComputedStyle(updateElement).display === "none"
+      ) {
+        const assignedToElement = document.querySelector(
+          "#issue_assigned_to_id"
+        ) as HTMLInputElement;
+        const userElement = document.querySelector(
+          ".author > .user"
+        ) as HTMLElement;
 
-      const csrf_token = document.querySelector(
-        'meta[name="csrf-token"]'
-      ) as HTMLMetaElement;
-      const href = offZZ.getAttribute("href");
-      if (href) {
-        fetch(href, {
-          method: "POST",
-          headers: {
-            // AJAX请求时必传token
-            "X-CSRF-Token": csrf_token.getAttribute("content"),
-          } as Record<string, string>,
-        })
-          .then((response) => {
-            console.log("response :", response, response.text());
-          })
-          .catch((error) => {
-            console.error("Error:", error);
+        if (assignedToElement && userElement) {
+          const text = userElement.innerText;
+          const href = userElement.getAttribute("href");
+          const id = href?.replace("/users/", "") || "";
+
+          optimizeReflow(() => {
+            assignedToElement.value = id;
+            this.setSelectValue(assignedToElement, text);
           });
-      } else {
-        // 处理href不存在的情况，例如：
-        console.error("href属性不存在");
-        // 或抛出错误 throw new Error("href属性不存在");
+        }
       }
+    } catch (error) {
+      console.error("Error in changeAssign:", error);
     }
   }
 
-  async commentsRequired(event: Event) {
-    const inputEle = event.target as HTMLSelectElement;
-    const form = document.getElementById("issue-form") as HTMLElement;
+  /**
+   * 处理状态变更事件
+   * @private
+   * @param {Event} event - 状态变更事件
+   * @returns {Promise<void>}
+   * @description 当任务状态改变时执行相应操作（如自动完成、跟踪等）
+   */
+  private async statusChange(event: Event): Promise<void> {
+    try {
+      const settings = await getSettings();
+      const select = event.target as HTMLSelectElement;
+      const selectValue = select?.value;
 
-    // console.log(event, "event", !!inputEle.value.trim());
-    commentsRequired(form, !!inputEle.value.trim());
+      if (selectValue === "3" && settings?.percent !== false) {
+        const doneRatioElement = document.querySelector(
+          "#issue_done_ratio"
+        ) as HTMLInputElement;
+        if (doneRatioElement) {
+          optimizeReflow(() => {
+            doneRatioElement.value = "100";
+            this.setSelectValue(doneRatioElement, "100%");
+          });
+        }
+      }
+
+      const loggedUser = document.querySelector(
+        "#loggedas > .user"
+      ) as HTMLElement;
+      const assignedUser = document.querySelector(
+        ".assigned-to > .user"
+      ) as HTMLElement;
+      const trackButton = document.querySelector(
+        ".icon-fav-off"
+      ) as HTMLElement;
+
+      if (
+        (selectValue === "3" || selectValue === "2") &&
+        settings?.tracks &&
+        trackButton &&
+        loggedUser &&
+        assignedUser &&
+        assignedUser.getAttribute("href") === loggedUser.getAttribute("href")
+      ) {
+        await this.setTracking(trackButton);
+      }
+    } catch (error) {
+      console.error("Error in statusChange:", error);
+    }
+  }
+
+  /**
+   * 设置任务跟踪状态
+   * @private
+   * @param {HTMLElement} trackButton - 跟踪按钮元素
+   * @returns {Promise<void>}
+   * @description 通过API调用设置任务为跟踪状态
+   */
+  private async setTracking(trackButton: HTMLElement): Promise<void> {
+    trackButton.classList.remove("icon-fav-off");
+    trackButton.classList.add("icon-fav");
+    trackButton.textContent = "取消跟踪";
+    trackButton.setAttribute("data-method", "delete");
+
+    const csrfToken = document.querySelector(
+      'meta[name="csrf-token"]'
+    ) as HTMLMetaElement;
+    const href = trackButton.getAttribute("href");
+
+    if (!href) {
+      console.error("Track button href not found");
+      return;
+    }
+
+    try {
+      const response = await fetch(href, {
+        method: "POST",
+        headers: {
+          "X-CSRF-Token": csrfToken.getAttribute("content") || "",
+        },
+      });
+
+      if (!response.ok) {
+        console.error("Failed to set tracking:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error setting tracking:", error);
+    }
+  }
+
+  /**
+   * 处理工时注释必填逻辑
+   * @private
+   * @param {Event} event - 输入事件
+   * @returns {void}
+   * @description 当输入工时时，根据设置决定是否要求填写注释
+   */
+  private commentsRequired(event: Event): void {
+    const inputElement = event.target as HTMLInputElement;
+    const form = document.getElementById("issue-form") as HTMLElement;
+    commentsRequired(form, !!inputElement.value.trim());
   }
 }
 
-const commentsRequired = async (form: any, required = true) => {
-  const { settings } = await chrome.storage.local.get("settings");
-  const { time_entry_comments } = form;
-  // console.log(time_entry_comments, required, "time_entry_comments");
-  if (time_entry_comments) {
-    if (settings?.workingNote !== false && required) {
-      time_entry_comments.setAttribute("required", true);
-    } else {
-      time_entry_comments.removeAttribute("required");
+/**
+ * 处理工时注释必填逻辑
+ * @param {any} form - 表单对象
+ * @param {boolean} [required=true] - 是否要求必填
+ * @returns {Promise<void>}
+ * @description 根据设置和参数决定是否要求工时注释为必填项
+ */
+const commentsRequired = async (form: any, required = true): Promise<void> => {
+  try {
+    const settings = await getSettings();
+    const { time_entry_comments } = form;
+
+    if (time_entry_comments) {
+      if (settings?.workingNote !== false && required) {
+        time_entry_comments.setAttribute("required", "true");
+      } else {
+        time_entry_comments.removeAttribute("required");
+      }
     }
+  } catch (error) {
+    console.error("Error in commentsRequired:", error);
   }
 };
 
-//设置工时统计注释是否必填
-const setCommentsRequired = () => {
-  let form;
-  //工时统计页面
-  if ((form = document.getElementById("new_time_entry"))) {
-    commentsRequired(form);
-  }
-  //工时编辑页面
-  else if ((form = document.querySelector(".edit_time_entry"))) {
-    commentsRequired(form);
-  }
-  //任务单编辑页面，工时填入时，才会检测是否必填
-  else if (
-    (form = document.getElementById("issue-form")) &&
-    (form as any).time_entry_hours
-  ) {
-    // console.log(form, form.time_entry_hours.value, "commentsRequired");
-    commentsRequired(form, !!(form as any).time_entry_hours.value.trim());
+/**
+ * 设置工时注释必填状态
+ * @returns {Promise<void>}
+ * @description 根据页面类型设置相应表单的注释必填状态
+ */
+const setCommentsRequired = async (): Promise<void> => {
+  try {
+    let form: HTMLFormElement | null;
+
+    if ((form = document.getElementById("new_time_entry") as HTMLFormElement)) {
+      await commentsRequired(form);
+    } else if (
+      (form = document.querySelector(".edit_time_entry") as HTMLFormElement)
+    ) {
+      await commentsRequired(form);
+    } else if (
+      (form = document.getElementById("issue-form") as HTMLFormElement) &&
+      (form as any).time_entry_hours
+    ) {
+      await commentsRequired(
+        form,
+        !!(form as any).time_entry_hours.value.trim()
+      );
+    }
+  } catch (error) {
+    console.error("Error in setCommentsRequired:", error);
   }
 };
 
-//初始化设置信息
-// chrome.runtime.sendMessage("settings_init", (response: CustomResponse) => {
-//   // 使用 response 的逻辑
-//   console.log(response, "settings_init");
-//   setCommentsRequired();
-// });
-
-// 初始化设置信息
-// chrome.runtime.sendMessage("settings_init", (response) => {
-//   // settings = setCurrentUrl(response);
-// });
 setCommentsRequired();
 
-// 和background通信，更新设置信息
 chrome.runtime.onMessage.addListener((_request, _sender, _sendResponse) => {
   setCommentsRequired();
-  // 返回 true 表示将进行异步响应
   return true;
 });
 
-function initCss() {
+/**
+ * 初始化CSS样式
+ * @returns {void}
+ * @description 向页面注入自定义样式，美化组件外观
+ */
+function initCss(): void {
   const style = document.createElement("style");
   style.type = "text/css";
   style.appendChild(
@@ -1000,9 +1542,11 @@ function initCss() {
       }
 
       .option-item {
-        padding: 3px;
+        padding: 0 3px;
         cursor: pointer;
         color: #333;
+        height: 28px;
+        line-height: 28px;
       }
 
       .option-item:hover {
@@ -1023,51 +1567,72 @@ function initCss() {
   );
   document.head.appendChild(style);
 }
-// 初始化所有select
-async function initSelects() {
-  const { settings } = await chrome.storage.local.get("settings");
-  // 查看 url 是不是当前的项目
-  if (!settings?.url || location.href.indexOf(settings?.url) !== 0) {
-    return false;
-  }
 
-  console.log(
-    `%cRedmine Helper %cV${
-      pkg.version || "1.0.0"
-    } Copyright \xa9 zoeblow 2016-%s\n`,
-    'font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;font-size:24px;color:#FD6E0E;-webkit-text-fill-color:#FD6E0E;-webkit-text-stroke: 1px #FD6E0E;',
-    "font-size:12px;color:#999999;",
-    new Date().getFullYear()
-  );
+/**
+ * 初始化选择器组件
+ * @returns {Promise<void>}
+ * @description 扫描页面中的所有select元素并替换为可搜索组件
+ */
+async function initSelects(): Promise<void> {
+  try {
+    if (!(await isCurrentSiteEnabled())) {
+      return;
+    }
 
-  initCss();
+    console.log(
+      `%cRedmine Helper %cV${
+        pkg.version || "1.0.0"
+      } Copyright \xa9 zoeblow 2016-%s\n`,
+      'font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;font-size:24px;color:#FD6E0E;-webkit-text-fill-color:#FD6E0E;-webkit-text-stroke: 1px #FD6E0E;',
+      "font-size:12px;color:#999999;",
+      new Date().getFullYear()
+    );
 
-  document.querySelectorAll("select").forEach((select) => {
-    new FilterableSelect(select);
-  });
+    initCss();
 
-  // 监听动态添加的select
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node: any) => {
-        if (node.nodeName === "SELECT") {
-          new FilterableSelect(node);
-        } else if (node.querySelectorAll) {
-          node.querySelectorAll("select").forEach((newSelect: any) => {
-            new FilterableSelect(newSelect);
+    // Batch DOM queries for better performance
+    const selects = document.querySelectorAll("select");
+    selects.forEach((select) => {
+      new FilterableSelect(select as HTMLSelectElement);
+    });
+
+    // Use optimized observer with throttling
+    const observer = new MutationObserver(
+      debounce((mutations) => {
+        const newSelects: HTMLSelectElement[] = [];
+
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node: any) => {
+            if (node.nodeName === "SELECT") {
+              newSelects.push(node as HTMLSelectElement);
+            } else if (node.querySelectorAll) {
+              node
+                .querySelectorAll("select")
+                .forEach((newSelect: HTMLSelectElement) => {
+                  newSelects.push(newSelect);
+                });
+            }
+          });
+        });
+
+        // Process new selects in batch
+        if (newSelects.length > 0) {
+          optimizeReflow(() => {
+            newSelects.forEach((select) => new FilterableSelect(select));
           });
         }
-      });
-    });
-  });
+      }, 100)
+    );
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  } catch (error) {
+    console.error("Error in initSelects:", error);
+  }
 }
 
-// 启动初始化
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initSelects);
 } else {
